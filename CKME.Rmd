@@ -1,0 +1,307 @@
+---
+title: "CKME - BANK MARKETING DATASET"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+# Installation of Packages and adding it to library
+
+install.packages("ggplot2")
+install.packages("corrplot")
+install.packages("caret")
+install.packages("dplyr")
+install.packages("caTools")
+install.packages("faraway")
+install.packages("modelr")
+install.packages("ROCR")
+install.packages("randomForest")
+install.packages("h2o")
+install.packages("e1071")
+```{r}
+library(ggplot2)
+library(corrplot)
+library(caret)
+library(dplyr)
+library(caTools)
+library(faraway)
+library(modelr)
+library(ROCR)
+library(randomForest)
+library(h2o)
+library(e1071)
+```
+# set working directory
+```{r}
+setwd("C:/Users/iss/Desktop/Ryerson/CKME136/BANK")
+```
+# Read CSV file 
+
+#Dataset is obtained from UCI.edu related to European banks marketing campaign carried for term deposits.  
+```{r}
+bank = read.csv("bank-additional-full.csv",sep=";", header=T)
+```
+#Summary of the dataset
+```{r}
+summary(bank)
+```
+```{r}
+head(bank)
+```
+\newpage
+#Structure of the dataset
+
+#There are total of 21 columns and 41,118 observations in the dataset. 10 variables are numeric and 11 variables are characters including target variable that is the outcome of the call. 
+```{r}
+str(bank)
+```
+#y-It is categorical variable, Yes representing that client has subscribed a term deposit? The data is considered to be imbalanced due a vast difference in class of outcome variable, there are 11% records for yes i.e subscribe for term deposit and 89% for not interested customers.  
+```{r}
+table (bank$y)
+```
+\newpage
+#There are no such outliers in age variable. Majority of the records have age 60 or below.
+
+```{r}
+boxplot(bank$age, xlab="", ylab="Age",vertical=TRUE,col=2)
+hist(bank$age,col=terrain.colors(10))
+
+```
+\newpage
+
+#Duration represents the duration of last contact to the customer. 
+
+#Variable is highly correlated with the outcome variable.
+```{r}
+boxplot(bank$duration, xlab="", ylab="Call Duration",vertical=TRUE,col=2)
+hist(bank$duration,col=terrain.colors(10))
+```
+
+
+\newpage
+```{r}
+barplot(table(bank$job), main="Job", xlab="Jobs",col=rainbow(10),legend.text = TRUE, beside=FALSE,args.legend = list(x = "topright", bty = "n", inset=c(-0.05, 0)))
+table (bank$job, bank$y)
+chisq.test(bank$job, bank$y, correct=FALSE)
+
+```
+
+
+\newpage
+```{r}
+barplot(table(bank$marital), main="Marital", xlab="Marital", col=rainbow(10),legend.text = TRUE, beside=FALSE)
+table (bank$marital, bank$y)
+chisq.test(bank$marital, bank$y, correct=FALSE)
+```
+\newpage
+#In Education variable, class illiterate had very less instances. With the class 'Illiterate'  R suggested that the approximation may be incorrect. Therefore the class was removed.
+```{r}
+barplot(table(bank$education), main="Education", xlab="Education", col=rainbow(10),legend.text = TRUE,,args.legend = list(x = "topright", bty = "n", inset=c(-0.15, 0)))
+
+table (bank$education, bank$y)
+chisq.test(bank$education, bank$y, correct=FALSE)
+
+```
+
+```{r}
+bank <- bank %>% filter(education != "illiterate")
+chisq.test(bank$education, bank$y, correct=FALSE)
+```
+
+\newpage
+
+#Default variable explains if the client has default on credit products. Class 'yes' has very low records therefore the records will be excluded.
+
+```{r}
+table (bank$default, bank$y)
+chisq.test(bank$default, bank$y, correct=FALSE)
+bank <- bank %>% filter(default != "yes")
+chisq.test(bank$default, bank$y, correct=FALSE)
+```
+
+#Housing represents if the customer have any House loan. The Chi Square value 0.05 which can be consider at the border of 95% significance value. 
+
+```{r}
+table (bank$housing, bank$y)
+chisq.test(bank$housing, bank$y, correct=FALSE)
+```
+\newpage
+
+#Loan represents if the customer have any personal loan. 
+#The Chi Square value 0.57 which shows the loan doesnt have a signifance on the outcome variable Y. Therefore, we can consider after initial results to remove this variable.
+```{r}
+table (bank$loan, bank$y)
+chisq.test(bank$loan, bank$y, correct=FALSE)
+```
+```{r}
+table (bank$contact, bank$y)
+chisq.test(bank$contact, bank$y, correct=FALSE)
+```
+```{r}
+table (bank$day_of_week, bank$y)
+chisq.test(bank$day_of_week, bank$y, correct=FALSE)
+```
+```{r}
+table (bank$poutcome, bank$y)
+chisq.test(bank$poutcome, bank$y, correct=FALSE)
+```
+\newpage
+
+#Checking Correlation for all the numeric variables. Strong correlation is observed for all economic variables emp.var.rate, cons.price.idx, cons.conf.idx, euribor3m, and nr.employed. 
+
+```{r}
+round(cor(bank[,c(1,11:14,16:20)]),2)
+corrplot(cor(bank[,c(1,11:14,16:20)]), method = "pie")
+```
+
+\newpage
+
+#To avoid multicolinearity, Variance Inflation Factor was checked for different group of variables Social & Economic and Campaign. Value of VIF seems to be really high therefore i have considered to remove the economic variables. 
+
+For campaign related variables, duration is highly correlated to outcome variable but this could only be known when we make the call, so i will exclude from the analysis. 
+
+pdays and previous are the variables related previous contact. pdays have high number of no contact value '999' therefore i will remove pdays from the model.
+
+Used library "faraway" to use the function of "vif" 
+
+```{r}
+mymodel_eco <- glm(y ~ emp.var.rate + cons.price.idx + cons.conf.idx + euribor3m + nr.employed ,data=bank, family=binomial)
+
+mymodel_cam <- glm(y ~ duration + pdays + previous,data=bank, family=binomial)
+
+summary(mymodel_eco)
+summary(mymodel_cam)
+
+vif(mymodel_eco)
+table(bank$pdays,bank$y)
+vif(mymodel_cam)
+```
+\newpage
+#Converting categorical variable to numeric, by creating dummy variables using one hot encoding.  
+
+```{r}
+bank$job_1 <- as.numeric(bank$job == "admin")
+bank$job_2 <- as.numeric(bank$job == "blue_collar")
+bank$job_3 <- as.numeric(bank$job == "entrepreneur")
+bank$job_4 <- as.numeric(bank$job == "housemaid")
+bank$job_5 <- as.numeric(bank$job == "management")
+bank$job_6 <- as.numeric(bank$job == "retired")
+bank$job_7 <- as.numeric(bank$job == "self-employed")
+bank$job_8 <- as.numeric(bank$job == "services")
+bank$job_9 <- as.numeric(bank$job == "student")
+bank$job_10 <- as.numeric(bank$job == "technician")
+bank$job_11 <- as.numeric(bank$job == "unemployed")
+bank$job_12 <- as.numeric(bank$job == "unknown")
+
+for(LEVEL in unique(bank$marital)){
+  bank[paste("marital", LEVEL, sep = "_")] <- ifelse(bank$marital== LEVEL, 1, 0)}
+
+for(LEVEL in unique(bank$education)){
+  bank[paste("education", LEVEL, sep = "_")] <- ifelse(bank$education == LEVEL, 1, 0)}
+
+for(LEVEL in unique(bank$default)){
+  bank[paste("default", LEVEL, sep = "_")] <- ifelse(bank$default == LEVEL, 1, 0)}
+
+for(LEVEL in unique(bank$housing)){
+  bank[paste("housing", LEVEL, sep = "_")] <- ifelse(bank$housing == LEVEL, 1, 0)}
+
+for(LEVEL in unique(bank$loan)){
+  bank[paste("loan", LEVEL, sep = "_")] <- ifelse(bank$loan == LEVEL, 1, 0)}
+
+for(LEVEL in unique(bank$contact)){
+  bank[paste("contact", LEVEL, sep = "_")] <- ifelse(bank$contact == LEVEL, 1, 0)}
+
+for(LEVEL in unique(bank$month)){
+  bank[paste("month", LEVEL, sep = "_")] <- ifelse(bank$month == LEVEL, 1, 0)}
+
+for(LEVEL in unique(bank$day_of_week)){
+  bank[paste("day_of_week", LEVEL, sep = "_")] <- ifelse(bank$day_of_week == LEVEL, 1, 0)}
+
+for(LEVEL in unique(bank$poutcome)){
+  bank[paste("poutcome", LEVEL, sep = "_")] <- ifelse(bank$poutcome == LEVEL, 1, 0)}
+```
+\newpage
+#Remove all the original categorical variables for which the dummy variables are created. Also removing the social & economic variables, duration and pdays. 
+```{r}
+bank$job <- NULL
+bank$marital <- NULL
+bank$education <- NULL
+bank$default <- NULL
+bank$housing <- NULL
+bank$loan <- NULL #we will consider to remove this variable after initial
+bank$contact <- NULL
+bank$month <- NULL
+bank$day_of_week <- NULL
+bank$poutcome <- NULL
+
+bank$duration <- NULL
+bank$pdays <- NULL
+
+bank$emp.var.rate <- NULL
+bank$cons.price.idx <- NULL
+bank$cons.conf.idx <- NULL
+bank$euribor3m <- NULL
+bank$nr.employed <- NULL
+
+```
+
+```{r}
+colnames(bank)
+
+dim(bank)
+```
+#Rearranging the variable to have outcome First and then all other variables. 
+```{r}
+bank <- bank[,c(4,1,2,3,5:54)]
+```
+
+# Splitting the dataset Bank into Training and Test set by the ratio of 80% and 20% respectively.
+```{r}
+set.seed(123)
+ 
+split <- sample.split(bank$y, SplitRatio = 0.80) 
+
+train <- subset(bank, split==TRUE)
+test <- subset(bank, split==FALSE)
+
+table(train$y)
+table(test$y)
+```
+# FITTING LOGISTIC REGRESSION MODEL TO THE TRAINING DATASET
+```{r}
+model_LR <- glm(formula = y ~ ., data=train, family=binomial)
+summary(model_LR)
+
+prob_pred = predict(model_LR, type='response', newdata=test[-1])
+
+
+LR_pred = ifelse(prob_pred > 0.5, 1,0)
+
+LR_CM = table(test[,1],LR_pred)
+LR_CM
+
+#Accuracy is calculated at 89%
+
+pred<-prediction(prob_pred, test$y)
+eval <- performance(pred,"tpr","fpr")  
+plot(eval, colorize=F)  
+abline(a=0, b=1)
+
+auc <- performance(pred,"auc")
+auc <- unlist(slot(auc,"y.values"))
+auc <- round(auc,4)
+legend(.6,.2,auc, title="AUC", cex=0.5)
+
+```
+
+# FITTING RANDOM FOREST MODEL TO THE TRAINING DATASET
+```{r}
+model_rf <- randomForest(y~.,data=train)
+
+library(e1071)
+
+#Model accuracy is at 89% however the sensitivity is on the lower side. 
+
+confusionMatrix(predict(model_rf, test), test$y, positive='yes')
+
+```
